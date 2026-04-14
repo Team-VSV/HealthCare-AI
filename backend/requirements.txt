@@ -51,5 +51,7 @@ typing_extensions==4.15.0
 urllib3==2.6.3
 uuid_utils==0.14.1
 uvicorn==0.44.0
+Pillow==11.0.0
+tensorflow==2.18.0
 xxhash==3.6.0
 zstandard==0.25.0
