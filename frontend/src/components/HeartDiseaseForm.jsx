@@ -1,14 +1,24 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import { HeartPulse, Activity, AlertCircle, CheckCircle } from 'lucide-react';
+import { HeartPulse, Activity, AlertCircle, CheckCircle, AlertTriangle } from 'lucide-react';
 
 const API_URL = "http://localhost:8000/api/predict/heart-disease";
 
 export default function HeartDiseaseForm() {
   const [formData, setFormData] = useState({
-    age: 50, sex: 1, cp: 1, trestbps: 120, chol: 200, fbs: 0,
-    restecg: 0, thalach: 150, exang: 0, oldpeak: 1.0, slope: 1, ca: 0, thal: 3
+    age: 50,
+    gender: 1,
+    height: 170,
+    weight: 75,
+    ap_hi: 120,
+    ap_lo: 80,
+    cholesterol: 1,
+    gluc: 1,
+    smoke: 0,
+    alco: 0,
+    active: 1
   });
+  
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -36,144 +46,182 @@ export default function HeartDiseaseForm() {
   };
 
   return (
-    <div className="bg-white rounded-2xl shadow-xl p-8 max-w-4xl mx-auto border border-gray-100 transition-all duration-300 hover:shadow-2xl">
-      <div className="flex items-center gap-3 mb-8 pb-4 border-b border-gray-100">
-        <div className="p-3 bg-red-50 text-red-500 rounded-xl">
-          <HeartPulse size={28} strokeWidth={2.5} />
+    <div className="module-container">
+      {/* Header */}
+      <div className="module-header" style={{ background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 50%, #b91c1c 100%)' }}>
+        <div className="module-header-icon">
+          <HeartPulse size={28} />
         </div>
         <div>
-          <h2 className="text-2xl font-bold text-gray-800">Heart Disease Risk AI</h2>
-          <p className="text-gray-500 text-sm mt-1">Predict coronary disease probability using 13 clinical factors</p>
+          <h2 className="module-header-title">Heart Disease Risk AI</h2>
+          <p className="module-header-subtitle">
+            PyTorch Deep Neural Network powered by 70,000 patient records
+          </p>
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {/* Core Demographics */}
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Age</label>
-          <input type="number" name="age" value={formData.age} onChange={handleChange} className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition" />
-        </div>
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Sex</label>
-          <select name="sex" value={formData.sex} onChange={handleChange} className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white">
-            <option value={1}>Male</option>
-            <option value={0}>Female</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Chest Pain Type (cp)</label>
-          <select name="cp" value={formData.cp} onChange={handleChange} className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white">
-            <option value={1}>Typical Angina</option>
-            <option value={2}>Atypical Angina</option>
-            <option value={3}>Non-anginal Pain</option>
-            <option value={4}>Asymptomatic</option>
-          </select>
-        </div>
-
-        {/* Vitals */}
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Resting BP (mm Hg)</label>
-          <input type="number" name="trestbps" value={formData.trestbps} onChange={handleChange} className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
-        </div>
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Cholesterol (mg/dl)</label>
-          <input type="number" name="chol" value={formData.chol} onChange={handleChange} className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
-        </div>
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Max Heart Rate</label>
-          <input type="number" name="thalach" value={formData.thalach} onChange={handleChange} className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
-        </div>
-
-        {/* Binary/Categorical metrics */}
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Fasting Blood Sugar {'>'} 120</label>
-          <select name="fbs" value={formData.fbs} onChange={handleChange} className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white">
-            <option value={1}>True</option>
-            <option value={0}>False</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Resting ECG</label>
-          <select name="restecg" value={formData.restecg} onChange={handleChange} className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white">
-            <option value={0}>Normal</option>
-            <option value={1}>ST-T Wave Abnormality</option>
-            <option value={2}>LV Hypertrophy</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Exercise Angina</label>
-          <select name="exang" value={formData.exang} onChange={handleChange} className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white">
-            <option value={1}>Yes</option>
-            <option value={0}>No</option>
-          </select>
-        </div>
-        
-        {/* Advanced Metrics */}
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Oldpeak (ST Depression)</label>
-          <input type="number" step="0.1" name="oldpeak" value={formData.oldpeak} onChange={handleChange} className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
-        </div>
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Slope</label>
-          <select name="slope" value={formData.slope} onChange={handleChange} className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white">
-            <option value={1}>Upsloping</option>
-            <option value={2}>Flat</option>
-            <option value={3}>Downsloping</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Major Vessels (0-3)</label>
-          <input type="number" name="ca" value={formData.ca} min="0" max="3" onChange={handleChange} className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
-        </div>
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Thalassemia</label>
-          <select name="thal" value={formData.thal} onChange={handleChange} className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white">
-            <option value={3}>Normal</option>
-            <option value={6}>Fixed Defect</option>
-            <option value={7}>Reversable Defect</option>
-          </select>
-        </div>
-
-        <div className="md:col-span-2 lg:col-span-3 flex justify-end mt-4">
-          <button 
-            type="submit" 
-            disabled={loading}
-            className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-8 py-3 rounded-xl font-semibold shadow-lg shadow-blue-200 transition-all transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-          >
-            {loading ? <Activity className="animate-spin" size={20} /> : <Activity size={20} />}
-            {loading ? "Analyzing Data..." : "Run AI Analysis"}
-          </button>
-        </div>
-      </form>
-
-      {/* Results Section */}
-      {error && (
-        <div className="mt-8 p-4 bg-red-50 text-red-600 rounded-xl flex items-center gap-3 border border-red-100">
-          <AlertCircle size={20} />
-          <span className="font-medium">{error}</span>
-        </div>
-      )}
-
-      {result && (
-        <div className={`mt-8 p-6 rounded-2xl border ${result.prediction === 1 ? 'bg-red-50 border-red-100' : 'bg-emerald-50 border-emerald-100'} transition-all duration-500 animate-fade-in`}>
-          <div className="flex items-start gap-4">
-            <div className={`p-3 rounded-full ${result.prediction === 1 ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'}`}>
-              {result.prediction === 1 ? <AlertCircle size={28} /> : <CheckCircle size={28} />}
+      <div className="module-body">
+        <form onSubmit={handleSubmit}>
+          <div className="heart-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+            {/* Demographics */}
+            <div className="form-group">
+              <label className="form-label">Age (Years)</label>
+              <input type="number" name="age" value={formData.age} onChange={handleChange} className="form-input" min="1" max="120" />
             </div>
-            <div>
-              <h3 className={`text-xl font-bold ${result.prediction === 1 ? 'text-red-700' : 'text-emerald-700'}`}>
-                {result.risk_level}
-              </h3>
-              <p className={`mt-1 text-sm ${result.prediction === 1 ? 'text-red-600 opacity-90' : 'text-emerald-600 opacity-90'}`}>
-                The AI model analyzed your clinical parameters with a confidence score of <strong>{(result.confidence * 100).toFixed(1)}%</strong>. 
-                {result.prediction === 1 
-                  ? " Please consult with a cardiologist for a thorough examination." 
-                  : " Your metrics appear normal, but maintain regular checkups."}
-              </p>
+            <div className="form-group">
+              <label className="form-label">Gender</label>
+              <select name="gender" value={formData.gender} onChange={handleChange} className="form-select">
+                <option value={1}>Male</option>
+                <option value={0}>Female</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Height (cm)</label>
+              <input type="number" name="height" value={formData.height} onChange={handleChange} className="form-input" min="50" max="250" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Weight (kg)</label>
+              <input type="number" name="weight" value={formData.weight} onChange={handleChange} className="form-input" min="10" max="300" />
+            </div>
+
+            {/* Vitals */}
+            <div className="form-group">
+              <label className="form-label">Systolic BP</label>
+              <input type="number" name="ap_hi" value={formData.ap_hi} onChange={handleChange} className="form-input" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Diastolic BP</label>
+              <input type="number" name="ap_lo" value={formData.ap_lo} onChange={handleChange} className="form-input" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Cholesterol</label>
+              <select name="cholesterol" value={formData.cholesterol} onChange={handleChange} className="form-select">
+                <option value={1}>Normal</option>
+                <option value={2}>Above Normal</option>
+                <option value={3}>Well Above Normal</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Glucose</label>
+              <select name="gluc" value={formData.gluc} onChange={handleChange} className="form-select">
+                <option value={1}>Normal</option>
+                <option value={2}>Above Normal</option>
+                <option value={3}>Well Above Normal</option>
+              </select>
+            </div>
+
+            {/* Lifestyle */}
+            <div className="form-group">
+              <label className="form-label">Smoking</label>
+              <select name="smoke" value={formData.smoke} onChange={handleChange} className="form-select">
+                <option value={0}>Non-Smoker</option>
+                <option value={1}>Smoker</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Alcohol Intake</label>
+              <select name="alco" value={formData.alco} onChange={handleChange} className="form-select">
+                <option value={0}>No / Rare</option>
+                <option value={1}>Frequent</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Physical Activity</label>
+              <select name="active" value={formData.active} onChange={handleChange} className="form-select">
+                <option value={1}>Active</option>
+                <option value={0}>Sedentary</option>
+              </select>
             </div>
           </div>
-        </div>
-      )}
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px' }}>
+            <button 
+              type="submit" 
+              disabled={loading}
+              className="btn-primary"
+              style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }}
+            >
+              {loading ? <Activity className="spin-icon" size={20} /> : <Activity size={20} />}
+              {loading ? "Running Neural Network..." : "Run AI Analysis"}
+            </button>
+          </div>
+        </form>
+
+        {/* Error */}
+        {error && (
+          <div className="result-error">
+            <AlertCircle size={20} />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {/* Results */}
+        {result && (
+          <div className="results-section" style={{ animation: 'fadeSlideUp 0.5s ease-out' }}>
+            <div style={{
+              padding: '24px',
+              borderRadius: 'var(--radius-lg)',
+              background: result.prediction === 1 ? 'rgba(239, 68, 68, 0.08)' : 'rgba(16, 185, 129, 0.08)',
+              border: `1px solid ${result.prediction === 1 ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)'}`,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+                <div style={{
+                  width: '48px', height: '48px', borderRadius: '50%',
+                  background: result.prediction === 1 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                  color: result.prediction === 1 ? '#ef4444' : '#10b981',
+                }}>
+                  {result.prediction === 1 ? <AlertCircle size={24} /> : <CheckCircle size={24} />}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <h3 style={{
+                    fontSize: '20px', fontWeight: 700, marginBottom: '8px',
+                    color: result.prediction === 1 ? '#f87171' : '#34d399',
+                  }}>
+                    {result.risk_level}
+                  </h3>
+                  <p style={{
+                    fontSize: '14px', lineHeight: 1.6,
+                    color: result.prediction === 1 ? '#fca5a5' : '#6ee7b7',
+                    opacity: 0.9,
+                  }}>
+                    The PyTorch neural network analyzed your vitals with a confidence score of <strong>{(result.confidence * 100).toFixed(1)}%</strong>. 
+                    {result.prediction === 1 
+                      ? " Please consult with a healthcare professional for a thorough cardiovascular evaluation." 
+                      : " Your metrics appear within a safer range, but maintain your regular checkups."}
+                  </p>
+
+                  {/* Confidence Bar */}
+                  <div style={{ marginTop: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>AI Confidence</span>
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        {(result.confidence * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="confidence-bar-track">
+                      <div
+                        className="confidence-bar-fill"
+                        style={{
+                          width: `${result.confidence * 100}%`,
+                          background: result.prediction === 1
+                            ? 'linear-gradient(90deg, #ef4444, #dc2626)'
+                            : 'linear-gradient(90deg, #10b981, #059669)',
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="disclaimer-box" style={{ marginTop: '16px' }}>
+              <AlertTriangle size={16} />
+              <span>This Deep Learning classification is for informational purposes only and is not a clinical diagnosis.</span>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

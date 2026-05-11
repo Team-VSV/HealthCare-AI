@@ -1,12 +1,28 @@
+import setuptools  # Fix for python 3.12 distutils removal when loading TF
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import pickle
 import numpy as np
 import os
-import tensorflow as tf
+
 from PIL import Image
 from io import BytesIO
+from typing import List, Optional
+import re
+import torch
+import torch.nn as nn
+from torchvision.models import mobilenet_v2
+import torchvision.transforms as transforms
+from PIL import Image
+
+# Import our custom modules
+from symptom_knowledge_base import DISEASE_DATABASE, TRIAGE_DESCRIPTIONS, SEVERITY_ORDER
+from treatment_protocols import get_treatment_plan
+
+# ─── TF-IDF imports ──────────────────────────────────────────────────
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 app = FastAPI(title="HealthCare AI API")
 
@@ -19,47 +35,129 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load the Heart Disease model globally on startup (if it exists)
-model_path = os.path.join(os.path.dirname(__file__), '..', 'models', 'heart_disease_rf.pkl')
+# ═══════════════════════════════════════════════════════════════════════
+# MODEL LOADING
+# ═══════════════════════════════════════════════════════════════════════
+
+# Load the Heart Disease PyTorch model globally
+class BigNN(nn.Module):
+    def __init__(self, input_size):
+        super(BigNN, self).__init__()
+        self.network = nn.Sequential(
+            nn.Linear(input_size, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(256, 128),
+            nn.BatchNorm1d(128),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(128, 64),
+            nn.BatchNorm1d(64),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(64, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1),
+            nn.Sigmoid()
+        )
+    def forward(self, x):
+        return self.network(x)
+
+model_path = os.path.join(os.path.dirname(__file__), '..', 'models', 'heart_disease_nn.pth')
+scaler_path = os.path.join(os.path.dirname(__file__), '..', 'models', 'heart_disease_scaler.pkl')
+
 heart_model = None
+heart_scaler = None
 feature_names = None
 
 try:
-    if os.path.exists(model_path):
-        with open(model_path, 'rb') as f:
+    if os.path.exists(scaler_path) and os.path.exists(model_path):
+        with open(scaler_path, 'rb') as f:
             data = pickle.load(f)
-            heart_model = data['model']
+            heart_scaler = data['scaler']
             feature_names = data['features']
-        print("[INFO] Heart Disease Model loaded successfully.")
+            
+        heart_model = BigNN(len(feature_names))
+        heart_model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu'), weights_only=True))
+        heart_model.eval()
+        print("[INFO] Heart Disease PyTorch BigNN loaded successfully.")
 except Exception as e:
-    print(f"[ERROR] Could not load Heart Disease Model: {e}")
+    print(f"[ERROR] Could not load Heart Disease PyTorch Model: {e}")
 
-# Load the Pneumonia CNN globally on startup (if it exists)
-pneumonia_model_path = os.path.join(os.path.dirname(__file__), '..', 'models', 'pneumonia_cnn.h5')
+# Load the Pneumonia CNN PyTorch model globally
+pneumonia_model_path = os.path.join(os.path.dirname(__file__), '..', 'models', 'pneumonia_cnn.pth')
 pneumonia_model = None
 
 try:
     if os.path.exists(pneumonia_model_path):
-        pneumonia_model = tf.keras.models.load_model(pneumonia_model_path)
-        print("[INFO] Pneumonia CNN Model loaded successfully.")
+        pneumonia_model = mobilenet_v2()
+        pneumonia_model.classifier = nn.Sequential(
+            nn.Dropout(p=0.4),
+            nn.Linear(pneumonia_model.last_channel, 128),
+            nn.ReLU(),
+            nn.Linear(128, 1),
+            nn.Sigmoid()
+        )
+        pneumonia_model.load_state_dict(torch.load(pneumonia_model_path, map_location=torch.device('cpu'), weights_only=True))
+        pneumonia_model.eval()
+        print("[INFO] Pneumonia CNN PyTorch Model loaded successfully.")
 except Exception as e:
-    print(f"[ERROR] Could not load Pneumonia CNN Model: {e}")
+    print(f"[ERROR] Could not load Pneumonia CNN PyTorch Model: {e}")
+
+# ═══════════════════════════════════════════════════════════════════════
+# NLP SYMPTOM CHECKER — TF-IDF Engine Setup
+# ═══════════════════════════════════════════════════════════════════════
+
+# Build a corpus where each document is the space-joined symptoms of one disease
+symptom_corpus = []
+for disease in DISEASE_DATABASE:
+    symptom_corpus.append(" ".join(disease["symptoms"]))
+
+# Fit the TF-IDF vectorizer on the disease symptom corpus
+tfidf_vectorizer = TfidfVectorizer(stop_words="english")
+disease_tfidf_matrix = tfidf_vectorizer.fit_transform(symptom_corpus)
+print("[INFO] Symptom Checker TF-IDF engine initialized.")
+
+# ═══════════════════════════════════════════════════════════════════════
+# PYDANTIC SCHEMAS
+# ═══════════════════════════════════════════════════════════════════════
 
 # Pydantic schema for the input data validation
 class HeartDiseaseInput(BaseModel):
     age: float
-    sex: float
-    cp: float
-    trestbps: float
-    chol: float
-    fbs: float
-    restecg: float
-    thalach: float
-    exang: float
-    oldpeak: float
-    slope: float
-    ca: float
-    thal: float
+    gender: float
+    height: float
+    weight: float
+    ap_hi: float
+    ap_lo: float
+    cholesterol: float
+    gluc: float
+    smoke: float
+    alco: float
+    active: float
+
+class SymptomInput(BaseModel):
+    symptoms: str
+    age: Optional[int] = None
+    sex: Optional[str] = None
+
+class MentalHealthInput(BaseModel):
+    # PHQ-9: 9 questions scored 0-3 each
+    phq9: List[int]
+    # GAD-7: 7 questions scored 0-3 each
+    gad7: List[int]
+
+class TreatmentInput(BaseModel):
+    condition: str
+    age: Optional[int] = None
+    sex: Optional[str] = None
+    severity: Optional[str] = "moderate"
+    comorbidities: Optional[List[str]] = []
+
+# ═══════════════════════════════════════════════════════════════════════
+# API ROUTES
+# ═══════════════════════════════════════════════════════════════════════
 
 @app.get("/")
 def read_root():
@@ -67,67 +165,339 @@ def read_root():
         "status": "API is running", 
         "models_loaded": {
             "heart_disease": heart_model is not None,
-            "pneumonia_cnn": pneumonia_model is not None
+            "pneumonia_cnn": pneumonia_model is not None,
+            "symptom_checker": True,
+            "mental_health": True,
+            "treatment_recommender": True,
         }
     }
 
+# ── 1. Heart Disease Risk Prediction ─────────────────────────────────
 @app.post("/api/predict/heart-disease")
 def predict_heart_disease(data: HeartDiseaseInput):
-    if heart_model is None:
+    if heart_model is None or heart_scaler is None:
         return {"error": "Heart disease model is not loaded or missing."}
     
-    # Ensure features are in the exact column order expected by the Random Forest model
-    input_data = []
-    for f in feature_names:
-        input_data.append(getattr(data, f))
-    
-    # Inference
-    input_array = np.array([input_data])
-    prediction = heart_model.predict(input_array)[0]
-    probabilities = heart_model.predict_proba(input_array)[0]
-    
-    risk_level = "High Risk" if prediction == 1 else "Low Risk"
-    confidence = float(probabilities[1] if prediction == 1 else probabilities[0])
-    
-    return {
-        "prediction": int(prediction),
-        "risk_level": risk_level,
-        "confidence": confidence
-    }
+    try:
+        # Convert incoming JSON into a dictionary
+        payload = data.dict()
+        
+        # --- Dynamic Feature Engineering ---
+        payload['bmi'] = payload['weight'] / ((payload['height'] / 100) ** 2)
+        payload['pulse_pressure'] = payload['ap_hi'] - payload['ap_lo']
+        payload['map'] = payload['ap_lo'] + (payload['pulse_pressure'] / 3)
+        # -----------------------------------
+        
+        # Extract features dynamically using the saved 14-dimension ordering
+        input_data = []
+        for f in feature_names:
+            if f not in payload:
+                raise ValueError(f"Missing required internal feature match: {f}")
+            input_data.append(payload[f])
+            
+        # Scale Data
+        input_array = np.array([input_data])
+        scaled_array = heart_scaler.transform(input_array)
+        
+        # Inference via PyTorch BigNN
+        with torch.no_grad():
+            tensor_in = torch.FloatTensor(scaled_array)
+            prediction_prob = heart_model(tensor_in).item()
+            
+        prediction_class = 1 if prediction_prob >= 0.5 else 0
+        risk_level = "High Risk" if prediction_class == 1 else "Low Risk"
+        # Provide confidence explicitly for the winning class
+        confidence = prediction_prob if prediction_class == 1 else (1.0 - prediction_prob)
+        
+        return {
+            "prediction": prediction_class,
+            "risk_level": risk_level,
+            "confidence": confidence
+        }
+    except Exception as e:
+        return {"error": f"Failed prediction: {str(e)}"}
 
+# ── 2. Pneumonia X-Ray Detection ─────────────────────────────────────
 @app.post("/api/predict/pneumonia")
 async def predict_pneumonia(file: UploadFile = File(...)):
     if pneumonia_model is None:
         return {"error": "Pneumonia model is not loaded or missing."}
     
     try:
-        # Read image
         contents = await file.read()
-        image = Image.open(BytesIO(contents)).convert('RGB')
         
-        # Resize to 224x224 for MobileNetV2
-        image = image.resize((224, 224))
+        # Decode image using PIL
+        img = Image.open(BytesIO(contents)).convert('RGB')
         
-        # Convert to numpy array and normalize
-        image_array = np.array(image) / 255.0
+        # Standard PyTorch ImageNet transforms
+        transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
         
-        # MobileNet expects a batch dimension: (1, 224, 224, 3)
-        image_batch = np.expand_dims(image_array, axis=0)
+        img_tensor = transform(img).unsqueeze(0) # Create batch axis
         
-        # Inference
-        prediction = pneumonia_model.predict(image_batch)[0][0]
+        # Inference via PyTorch
+        with torch.no_grad():
+            prediction_prob = pneumonia_model(img_tensor).item()
         
-        # Interpret results
-        risk_level = "High Risk of Pneumonia" if prediction > 0.5 else "Normal (Low Risk)"
-        confidence = float(prediction if prediction > 0.5 else 1.0 - prediction)
+        # Logic: Output is sigmoid (0.0 to 1.0). Closer to 1.0 means higher risk of pneumonia
+        risk_level = "High Risk of Pneumonia" if prediction_prob > 0.5 else "Normal (Low Risk)"
+        confidence = prediction_prob if prediction_prob > 0.5 else (1.0 - prediction_prob)
         
         return {
-            "prediction": float(prediction),
+            "prediction": prediction_prob,
             "risk_level": risk_level,
-            "confidence": confidence * 100 # return as percentage
+            "confidence": confidence * 100
         }
     except Exception as e:
         return {"error": f"Image processing failed: {str(e)}"}
+
+# ── 3. NLP Symptom Checker ───────────────────────────────────────────
+@app.post("/api/analyze/symptoms")
+def analyze_symptoms(data: SymptomInput):
+    """
+    Analyzes free-text symptom descriptions using TF-IDF cosine similarity
+    against the disease knowledge base. Returns top matching conditions
+    with explainability.
+    """
+    if not data.symptoms or len(data.symptoms.strip()) < 3:
+        return {"error": "Please provide a description of your symptoms."}
+    
+    user_text = data.symptoms.lower().strip()
+    
+    # Transform user input using the same TF-IDF vectorizer
+    user_tfidf = tfidf_vectorizer.transform([user_text])
+    
+    # Compute cosine similarity between user input and each disease profile
+    similarities = cosine_similarity(user_tfidf, disease_tfidf_matrix)[0]
+    
+    # Get the top matches (require > 0 similarity)
+    ranked_indices = np.argsort(similarities)[::-1]
+    
+    results = []
+    for idx in ranked_indices:
+        score = float(similarities[idx])
+        if score <= 0:
+            break
+        if len(results) >= 5:
+            break
+        
+        disease = DISEASE_DATABASE[idx]
+        
+        # Find which of the user's keywords matched this disease's symptom list
+        user_words = set(re.findall(r'\b[a-z]+(?:\s+[a-z]+)?\b', user_text))
+        matched_symptoms = []
+        for symptom in disease["symptoms"]:
+            symptom_lower = symptom.lower()
+            # Check if any user word or phrase appears in this symptom
+            if any(word in symptom_lower for word in user_words):
+                matched_symptoms.append(symptom)
+            elif symptom_lower in user_text:
+                matched_symptoms.append(symptom)
+        
+        results.append({
+            "condition": disease["name"],
+            "confidence": round(score * 100, 1),
+            "severity": disease["severity"],
+            "triage": disease["triage"],
+            "specialist": disease["specialist"],
+            "description": disease["description"],
+            "matched_symptoms": matched_symptoms,
+            "all_symptoms": disease["symptoms"],
+        })
+    
+    if not results:
+        return {
+            "matches": [],
+            "triage_recommendation": "Your symptoms did not strongly match any conditions in our database. Please consult a healthcare provider for proper evaluation.",
+            "disclaimer": "This AI symptom checker is for informational purposes only. It is not a substitute for professional medical advice."
+        }
+    
+    # Overall triage = highest severity found among top results
+    highest_triage = results[0]["triage"]
+    for r in results[:3]:
+        if SEVERITY_ORDER.get(r["severity"], 0) > SEVERITY_ORDER.get(results[0]["severity"], 0):
+            highest_triage = r["triage"]
+    
+    return {
+        "matches": results,
+        "triage_recommendation": TRIAGE_DESCRIPTIONS.get(highest_triage, "Please consult a healthcare provider."),
+        "highest_triage_level": highest_triage,
+        "disclaimer": "This AI symptom checker is for informational purposes only. It is not a substitute for professional medical advice, diagnosis, or treatment."
+    }
+
+# ── 4. Mental Health Risk Assessment ─────────────────────────────────
+
+# PHQ-9 scoring: https://med.stanford.edu/fastlab/research/imapp/msrs/_jcr_content/main/accordion/accordion_content3/download_256324296/file.res/PHQ9%20id%20date%2008.03.pdf
+PHQ9_QUESTIONS = [
+    "Little interest or pleasure in doing things",
+    "Feeling down, depressed, or hopeless",
+    "Trouble falling or staying asleep, or sleeping too much",
+    "Feeling tired or having little energy",
+    "Poor appetite or overeating",
+    "Feeling bad about yourself — or that you are a failure or have let yourself or your family down",
+    "Trouble concentrating on things, such as reading the newspaper or watching television",
+    "Moving or speaking so slowly that other people could have noticed — or being so fidgety or restless",
+    "Thoughts that you would be better off dead, or of hurting yourself",
+]
+
+# GAD-7 scoring: https://www.mdcalc.com/calc/1727/gad-7-general-anxiety-disorder-7
+GAD7_QUESTIONS = [
+    "Feeling nervous, anxious, or on edge",
+    "Not being able to stop or control worrying",
+    "Worrying too much about different things",
+    "Trouble relaxing",
+    "Being so restless that it's hard to sit still",
+    "Becoming easily annoyed or irritable",
+    "Feeling afraid, as if something awful might happen",
+]
+
+def classify_phq9(score: int) -> dict:
+    """Classify PHQ-9 score into severity bands."""
+    if score <= 4:
+        return {"severity": "Minimal", "level": "low", "color": "green"}
+    elif score <= 9:
+        return {"severity": "Mild", "level": "low", "color": "yellow"}
+    elif score <= 14:
+        return {"severity": "Moderate", "level": "moderate", "color": "orange"}
+    elif score <= 19:
+        return {"severity": "Moderately Severe", "level": "high", "color": "red"}
+    else:
+        return {"severity": "Severe", "level": "critical", "color": "darkred"}
+
+def classify_gad7(score: int) -> dict:
+    """Classify GAD-7 score into severity bands."""
+    if score <= 4:
+        return {"severity": "Minimal", "level": "low", "color": "green"}
+    elif score <= 9:
+        return {"severity": "Mild", "level": "low", "color": "yellow"}
+    elif score <= 14:
+        return {"severity": "Moderate", "level": "moderate", "color": "orange"}
+    else:
+        return {"severity": "Severe", "level": "high", "color": "red"}
+
+@app.post("/api/assess/mental-health")
+def assess_mental_health(data: MentalHealthInput):
+    """
+    Scores PHQ-9 (depression) and GAD-7 (anxiety) validated clinical instruments.
+    Returns severity classification with per-question breakdown.
+    """
+    # Validate input lengths
+    if len(data.phq9) != 9:
+        return {"error": f"PHQ-9 requires exactly 9 answers, received {len(data.phq9)}"}
+    if len(data.gad7) != 7:
+        return {"error": f"GAD-7 requires exactly 7 answers, received {len(data.gad7)}"}
+    
+    # Validate score range (0-3 for each)
+    for i, score in enumerate(data.phq9):
+        if score < 0 or score > 3:
+            return {"error": f"PHQ-9 question {i+1} score must be 0-3, received {score}"}
+    for i, score in enumerate(data.gad7):
+        if score < 0 or score > 3:
+            return {"error": f"GAD-7 question {i+1} score must be 0-3, received {score}"}
+    
+    # Calculate totals
+    phq9_total = sum(data.phq9)
+    gad7_total = sum(data.gad7)
+    
+    phq9_classification = classify_phq9(phq9_total)
+    gad7_classification = classify_gad7(gad7_total)
+    
+    # Per-question breakdown for explainability
+    phq9_breakdown = []
+    for i, (question, response) in enumerate(zip(PHQ9_QUESTIONS, data.phq9)):
+        phq9_breakdown.append({
+            "question_number": i + 1,
+            "question": question,
+            "response": response,
+            "response_label": ["Not at all", "Several days", "More than half the days", "Nearly every day"][response],
+            "is_elevated": response >= 2,
+        })
+    
+    gad7_breakdown = []
+    for i, (question, response) in enumerate(zip(GAD7_QUESTIONS, data.gad7)):
+        gad7_breakdown.append({
+            "question_number": i + 1,
+            "question": question,
+            "response": response,
+            "response_label": ["Not at all", "Several days", "More than half the days", "Nearly every day"][response],
+            "is_elevated": response >= 2,
+        })
+    
+    # Determine overall risk level
+    max_level = max(
+        SEVERITY_ORDER.get(phq9_classification["level"], 0),
+        SEVERITY_ORDER.get(gad7_classification["level"], 0)
+    )
+    overall_risk_map = {1: "Low", 2: "Moderate", 3: "High", 4: "Critical"}
+    overall_risk = overall_risk_map.get(max_level, "Low")
+    
+    # Check for suicidal ideation (PHQ-9 question 9)
+    suicidal_flag = data.phq9[8] > 0
+    
+    # Clinical recommendations
+    recommendations = []
+    if phq9_total >= 10:
+        recommendations.append("Your depression screening score suggests moderate or higher severity. Professional evaluation by a mental health provider is recommended.")
+    if gad7_total >= 10:
+        recommendations.append("Your anxiety screening score suggests moderate or higher severity. Consider consulting a mental health professional for evaluation.")
+    if suicidal_flag:
+        recommendations.append("IMPORTANT: You indicated thoughts of self-harm. Please reach out to a crisis helpline immediately. National Suicide Prevention Lifeline: 988 (US) | Crisis Text Line: Text HOME to 741741")
+    if phq9_total <= 4 and gad7_total <= 4:
+        recommendations.append("Your scores suggest minimal symptoms. Continue maintaining healthy habits and reach out to a provider if symptoms develop.")
+    if phq9_total >= 5 and phq9_total < 10:
+        recommendations.append("Your depression score is in the mild range. Watchful waiting with lifestyle modifications (exercise, sleep hygiene, social support) is recommended.")
+    if gad7_total >= 5 and gad7_total < 10:
+        recommendations.append("Your anxiety score is in the mild range. Relaxation techniques, mindfulness, and regular exercise may help manage symptoms.")
+    
+    return {
+        "depression": {
+            "score": phq9_total,
+            "max_score": 27,
+            "percentage": round(phq9_total / 27 * 100, 1),
+            "severity": phq9_classification["severity"],
+            "level": phq9_classification["level"],
+            "breakdown": phq9_breakdown,
+        },
+        "anxiety": {
+            "score": gad7_total,
+            "max_score": 21,
+            "percentage": round(gad7_total / 21 * 100, 1),
+            "severity": gad7_classification["severity"],
+            "level": gad7_classification["level"],
+            "breakdown": gad7_breakdown,
+        },
+        "overall_risk": overall_risk,
+        "suicidal_ideation_flag": suicidal_flag,
+        "recommendations": recommendations,
+        "disclaimer": "This assessment uses clinically validated instruments (PHQ-9 and GAD-7) but is NOT a clinical diagnosis. Please consult a licensed mental health professional for proper evaluation and treatment."
+    }
+
+# ── 5. Treatment Recommendation Engine ───────────────────────────────
+@app.post("/api/recommend/treatment")
+def recommend_treatment(data: TreatmentInput):
+    """
+    Generates personalized treatment recommendations using a rule-based
+    clinical knowledge engine. Returns lifestyle modifications, medication
+    classes, specialist referrals, and monitoring plans.
+    """
+    if not data.condition or len(data.condition.strip()) < 2:
+        return {"error": "Please provide a condition name."}
+    
+    severity = data.severity if data.severity in ["mild", "moderate", "severe"] else "moderate"
+    
+    plan = get_treatment_plan(
+        condition=data.condition.strip(),
+        severity=severity,
+        age=data.age,
+        sex=data.sex,
+        comorbidities=data.comorbidities or [],
+    )
+    
+    return plan
+
 
 if __name__ == "__main__":
     import uvicorn

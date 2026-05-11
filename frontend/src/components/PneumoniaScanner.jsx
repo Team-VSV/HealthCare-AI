@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import axios from 'axios';
-import { UploadCloud, FileImage, ShieldAlert, ShieldCheck, Activity } from 'lucide-react';
+import { UploadCloud, FileImage, ShieldAlert, ShieldCheck, Activity, AlertTriangle } from 'lucide-react';
 
 const PneumoniaScanner = () => {
     const [file, setFile] = useState(null);
@@ -58,93 +58,170 @@ const PneumoniaScanner = () => {
     const isHighRisk = result?.confidence > 50 && result?.risk_level?.includes('High');
 
     return (
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-100 max-w-3xl mx-auto transition-all duration-300">
-            <div className="bg-gradient-to-r from-teal-500 to-emerald-600 px-8 py-6">
-                <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                    <Activity className="w-6 h-6" /> Pneumonia X-Ray Scanner
-                </h2>
-                <p className="text-emerald-100 mt-2">Upload a chest X-Ray (JPEG/PNG) to analyze for signs of pneumonia using our MobileNet CNN model.</p>
+        <div className="module-container">
+            {/* Header */}
+            <div className="module-header" style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%)' }}>
+                <div className="module-header-icon">
+                    <Activity size={28} />
+                </div>
+                <div>
+                    <h2 className="module-header-title">Pneumonia X-Ray Scanner</h2>
+                    <p className="module-header-subtitle">
+                        Upload a chest X-Ray (JPEG/PNG) to analyze for pneumonia using our MobileNet CNN model
+                    </p>
+                </div>
             </div>
 
-            <div className="p-8">
+            <div className="module-body">
+                {/* Upload Zone */}
                 <div 
                     onClick={() => fileInputRef.current?.click()}
                     onDrop={handleDrop}
                     onDragOver={handleDragOver}
-                    className="border-2 border-dashed border-slate-300 rounded-xl p-10 text-center cursor-pointer hover:border-emerald-500 hover:bg-emerald-50 transition-colors"
+                    style={{
+                        border: '2px dashed var(--border-default)',
+                        borderRadius: 'var(--radius-lg)',
+                        padding: '40px 20px',
+                        textAlign: 'center',
+                        cursor: 'pointer',
+                        transition: 'all 250ms',
+                        background: 'var(--bg-input)',
+                    }}
+                    onMouseEnter={e => {
+                        e.currentTarget.style.borderColor = '#10b981';
+                        e.currentTarget.style.background = 'rgba(16, 185, 129, 0.05)';
+                    }}
+                    onMouseLeave={e => {
+                        e.currentTarget.style.borderColor = 'var(--border-default)';
+                        e.currentTarget.style.background = 'var(--bg-input)';
+                    }}
                 >
                     <input 
                         type="file" 
                         ref={fileInputRef} 
                         onChange={handleFileChange} 
-                        className="hidden" 
+                        style={{ display: 'none' }} 
                         accept="image/jpeg, image/png, image/jpg"
                     />
                     
                     {previewUrl ? (
-                        <div className="flex flex-col items-center animate-in fade-in zoom-in duration-300">
-                            <img src={previewUrl} alt="X-Ray Preview" className="max-h-64 rounded-lg shadow-md mb-4" />
-                            <p className="text-sm text-slate-500 flex justify-center gap-1 items-center">
-                                <FileImage className="w-4 h-4" /> {file.name}
+                        <div style={{ animation: 'fadeSlideUp 0.3s ease-out' }}>
+                            <img 
+                                src={previewUrl} 
+                                alt="X-Ray Preview" 
+                                style={{
+                                    maxHeight: '256px',
+                                    borderRadius: 'var(--radius-md)',
+                                    boxShadow: 'var(--shadow-md)',
+                                    marginBottom: '12px',
+                                }}
+                            />
+                            <p style={{ fontSize: '13px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                                <FileImage size={16} /> {file.name}
                             </p>
                         </div>
                     ) : (
-                        <div className="flex flex-col items-center text-slate-500 py-10">
-                            <UploadCloud className="w-16 h-16 text-slate-400 mb-4" />
-                            <p className="text-xl font-medium text-slate-700">Click or drag image to upload</p>
-                            <p className="text-sm mt-2">Supports JPG, PNG</p>
+                        <div style={{ padding: '20px 0' }}>
+                            <UploadCloud size={56} style={{ color: 'var(--text-muted)', marginBottom: '16px' }} />
+                            <p style={{ fontSize: '18px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                                Click or drag image to upload
+                            </p>
+                            <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Supports JPG, PNG</p>
                         </div>
                     )}
                 </div>
 
-                <div className="mt-8 flex justify-center">
+                {/* Scan Button */}
+                <div style={{ display: 'flex', justifyContent: 'center', marginTop: '24px' }}>
                     <button 
                         onClick={handleScan}
                         disabled={!file || loading}
-                        className={`px-8 py-4 rounded-full font-bold text-lg shadow-lg transition-all duration-300 ${
-                            !file || loading 
-                            ? 'bg-slate-300 text-slate-500 cursor-not-allowed' 
-                            : 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:shadow-xl hover:scale-105'
-                        }`}
+                        className="btn-primary"
+                        style={{
+                            background: (!file || loading) 
+                                ? 'var(--bg-card-hover)' 
+                                : 'linear-gradient(135deg, #10b981, #059669)',
+                            padding: '14px 32px',
+                            fontSize: '16px',
+                            borderRadius: '99px',
+                            color: (!file || loading) ? 'var(--text-muted)' : 'white',
+                            boxShadow: (!file || loading) ? 'none' : '0 4px 12px rgba(16, 185, 129, 0.25)',
+                        }}
                     >
-                        {loading ? 'Analyzing Scan...' : 'Scan Image'}
+                        {loading ? <><Activity className="spin-icon" size={20} /> Analyzing Scan...</> : 'Scan Image'}
                     </button>
                 </div>
 
+                {/* Error */}
                 {error && (
-                    <div className="mt-6 p-4 bg-red-50 text-red-700 rounded-lg border border-red-100 animate-in fade-in slide-in-from-top-2">
-                        <strong>Error:</strong> {error}
+                    <div className="result-error">
+                        <AlertTriangle size={20} />
+                        <span>{error}</span>
                     </div>
                 )}
 
+                {/* Results */}
                 {result && (
-                    <div className={`mt-8 p-6 rounded-xl border-2 ${isHighRisk ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'} transition-all duration-500 animate-in fade-in slide-in-from-bottom-4`}>
-                        <div className="flex items-start gap-4">
-                            <div className={`p-4 rounded-full ${isHighRisk ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
-                                {isHighRisk ? <ShieldAlert className="w-8 h-8" /> : <ShieldCheck className="w-8 h-8" />}
-                            </div>
-                            <div className="flex-1">
-                                <h3 className={`text-2xl font-bold ${isHighRisk ? 'text-red-800' : 'text-green-800'} mb-2`}>
-                                    {result.risk_level}
-                                </h3>
-                                <div className="space-y-3">
-                                    <div>
-                                        <div className="flex justify-between text-sm text-slate-500 font-medium mb-1">
-                                            <span>AI Confidence Score</span>
-                                            <span className="font-bold text-slate-700">{result.confidence.toFixed(1)}%</span>
+                    <div className="results-section" style={{ animation: 'fadeSlideUp 0.5s ease-out' }}>
+                        <div style={{
+                            padding: '24px',
+                            borderRadius: 'var(--radius-lg)',
+                            background: isHighRisk ? 'rgba(239, 68, 68, 0.08)' : 'rgba(16, 185, 129, 0.08)',
+                            border: `1px solid ${isHighRisk ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)'}`,
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+                                <div style={{
+                                    width: '56px', height: '56px', borderRadius: '50%',
+                                    background: isHighRisk ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                                    color: isHighRisk ? '#ef4444' : '#10b981',
+                                }}>
+                                    {isHighRisk ? <ShieldAlert size={28} /> : <ShieldCheck size={28} />}
+                                </div>
+                                <div style={{ flex: 1 }}>
+                                    <h3 style={{
+                                        fontSize: '22px', fontWeight: 700, marginBottom: '8px',
+                                        color: isHighRisk ? '#f87171' : '#34d399',
+                                    }}>
+                                        {result.risk_level}
+                                    </h3>
+
+                                    {/* Confidence Bar */}
+                                    <div style={{ marginBottom: '16px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                            <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>AI Confidence Score</span>
+                                            <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                                {result.confidence.toFixed(1)}%
+                                            </span>
                                         </div>
-                                        <div className="w-full bg-slate-200 rounded-full h-3">
+                                        <div className="confidence-bar-track" style={{ height: '10px' }}>
                                             <div 
-                                                className={`h-3 rounded-full ${isHighRisk ? 'bg-red-500' : 'bg-green-500'} transition-all duration-1000 ease-out`} 
-                                                style={{ width: `${Math.max(10, result.confidence)}%` }}
-                                            ></div>
+                                                className="confidence-bar-fill"
+                                                style={{
+                                                    width: `${Math.max(10, result.confidence)}%`,
+                                                    background: isHighRisk 
+                                                        ? 'linear-gradient(90deg, #ef4444, #dc2626)' 
+                                                        : 'linear-gradient(90deg, #10b981, #059669)',
+                                                }}
+                                            />
                                         </div>
                                     </div>
-                                    <p className="text-sm text-slate-600 pt-2 border-t border-slate-200/60 mt-4">
-                                        <strong>Note:</strong> This is an AI assessment generated by a Convolutional Neural Network intended for clinical support. An expert radiologist must independently verify these findings.
+
+                                    <p style={{
+                                        fontSize: '13px', color: 'var(--text-muted)',
+                                        paddingTop: '12px', borderTop: '1px solid var(--border-light)',
+                                        lineHeight: 1.5,
+                                    }}>
+                                        <strong>Note:</strong> This is an AI assessment generated by a Convolutional Neural Network 
+                                        intended for clinical support. An expert radiologist must independently verify these findings.
                                     </p>
                                 </div>
                             </div>
+                        </div>
+
+                        <div className="disclaimer-box" style={{ marginTop: '16px' }}>
+                            <AlertTriangle size={16} />
+                            <span>This AI prediction is for informational purposes only and is not a substitute for professional medical advice.</span>
                         </div>
                     </div>
                 )}
